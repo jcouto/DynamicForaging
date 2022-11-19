@@ -8,21 +8,23 @@ class DynamicForagingTask(TaskBase):
                  windows = None,
                  preference_path = None,
                  reward_volume = [3,3],     
-                 post_reward_duration = 2,  # time to collect reward
-                 response_period = [0,6], 
-                 motors_par = dict(position_out = [6, -6],
-                                  position_in = [-2, 2]),
-                 inter_trial_interval = [1,3.5],  # seconds (min - max)
+                 post_reward_duration = 2.5,  # time to collect reward
+                 response_period = [0,3],
+                 timeout_duration = 2.5,
+                 motors_par = dict(position_out = [-6, 6],
+                                  position_in = [2, -2]),
+                 inter_trial_interval = [1,2],  # seconds (min - max)
                  prob_left = 0.5,
                  audio_volume = 1,
                  block_par = dict(ntrials_exit_criteria = [15,25],
                                   performance_exit = 0.75,
-                                  probabilities = [0.9,0.7]),
-                 trial_cue = dict(frequency=6000,
-                                  duration=1),
-                 reward_cue = dict(frequency=1000,
-                                   duration=1),
+                                  probabilities = [1]),
+                 trial_cue = dict(frequency=2000,
+                                  duration=0.25),
+                 reward_cue = dict(frequency=9000,
+                                   duration=0.25),
                  punishment_cue = dict(duration=1),
+                 background = -0.5,
                  nlicks_to_reward = 2,
                  seed = None,
                  widget = None,
@@ -36,10 +38,12 @@ class DynamicForagingTask(TaskBase):
 
         self.seed = seed
         self.rand = default_rng(self.seed)
-
+        self.background = background
+        self.exp.set_background(self.background)
         self.header = ['state',
                        'state_time',
                        'itrial',
+                       'iblock',
                        'trial_cue',
                        'reward_cue',
                        'punishment_cue']
@@ -55,7 +59,7 @@ class DynamicForagingTask(TaskBase):
         self.trial_cue = trial_cue
         self.reward_cue  = reward_cue
         self.punishment_cue = punishment_cue
-
+        self.timeout_duration = timeout_duration
         self.inter_trial_interval = inter_trial_interval
         self.iti_duration = 1
         self.response_period = response_period
@@ -72,7 +76,7 @@ class DynamicForagingTask(TaskBase):
         self.spout_counts = np.array([0,0])
         self.nlicks_to_reward = nlicks_to_reward
 
-        self.current_block_side = 'right'
+        self.current_block_side = self.rand.choice(['right','left'])
         self.block_count = 0          # count which block we are at
         self.block_ntrials = 0
         self.block_performance = 0
@@ -100,13 +104,13 @@ class DynamicForagingTask(TaskBase):
                               high=1,
                               size=int(self.audio_rate*self.punishment_cue['duration']))
         s = np.stack([s,s]).T
-        self.punish_sound = self.exp.sound.Sound(
+        self.punishment_sound = self.exp.sound.Sound(
             s,
             sampleRate = self.audio_rate,
             volume = self.audio_volume)
         t = np.linspace(0,self.reward_cue['duration'],
                         int(self.audio_rate*self.reward_cue['duration']))
-        t = np.sin(self.reward_cue['frequency']*np.pi*t)
+        t = np.sin(self.reward_cue['frequency']*np.pi*t)*10
         t = np.stack([t,t]).T
         self.reward_sound = self.exp.sound.Sound(t,
                                                 sampleRate = self.audio_rate,
@@ -133,6 +137,7 @@ class DynamicForagingTask(TaskBase):
                     block_par = dict(self.block_par),
                     audio_volume = self.audio_volume,
                     nlicks_to_reward = self.nlicks_to_reward,
+                    background = self.background,
                     seed = self.seed)
 
     def draw_trials(self):
@@ -145,29 +150,41 @@ class DynamicForagingTask(TaskBase):
         
     def evaluate_block_transition(self):
         # check if we are in a new block
-        if self.block_ntrials > 4:
+        if self.block_ntrials > 4: # try to compute performance
             sel = self.task_trial_data[self.task_trial_data.iblock == self.block_count]
-            if len(sel) > 15: # only look at 15 trials
-                sel = sel.iloc[-15:]
-            self.block_performance = np.sum(sel.rewarded)/len(sel)
+            sel = sel[(sel.rewarded.values == 1) | (sel.punished.values == 1)]
+            print(len(sel),flush=True)
+            mintrials = np.min(self.block_par['ntrials_exit_criteria'])
+            self.block_performance = np.nan
+            if len(sel) > mintrials: # only look at 15 trials in the block
+                sel = sel.iloc[int(-1*mintrials):]
+                self.block_performance = np.sum(sel.rewarded)/len(sel)
             print('Block performance: {0}'.format(self.block_performance), flush = True)
-
-        if ((self.block_performance < (self.block_par['performance_exit'] + 0.05))
-            & (self.block_performance > (self.block_par['performance_exit'] - 0.05))) and (self.block_ntrials > self.min_trials_per_block):
+        
+        if ((self.block_performance > self.block_par['performance_exit']) and
+             (self.block_ntrials > self.min_trials_per_block)):
             self.isnewblock = True
+        #end
         if self.isnewblock:
             self.min_trials_per_block =  self.rand.integers(*self.block_par['ntrials_exit_criteria'])
             self.block_performance = 0
-            self.current_block_side = 'left' if self.current_block_side == 'right' else 'left' # switch sides
+            self.current_block_side = 'left' if self.current_block_side == 'right' else 'right' # switch sides
             self.redraw_trials = True
             self.block_count += 1 # count which block we are at
             p = self.rand.choice(self.block_par['probabilities'])
             self.prob_left = 1*p
             if self.current_block_side == 'right':
                 self.prob_left = 1-self.prob_left
+            if not self.widget is None:
+                self.widget.pleft.spin.valueChanged.disconnect()
+                self.widget.pleft.spin.setValue(self.prob_left)
+                self.widget.pleft.link(self.widget._pleft)
+
             self.isnewblock = False
+        #end
         if self.redraw_trials:
             self.draw_trials()
+        #end
         self.block_ntrials += 1
 
     def trial_init(self):
@@ -233,7 +250,7 @@ class DynamicForagingTask(TaskBase):
 
         if not self.widget is None:
             self.widget.trial_init_update()
-        self.set_state('trial_start')
+        self.set_state('init')
         self._plot_updated = False
         self._stored = False
 
@@ -252,14 +269,14 @@ class DynamicForagingTask(TaskBase):
                 self.trial['response_time'] = self.trial_clock.getTime()
                 self.trial['response'] = 1 if self._rewarded_idx == 0 else -1
                 self.trial['rewarded'] = 1
-                self.set_state('post_reward',optopars = self.optogenetics_par)
+                self.play_sound([self.reward_sound])
+                self.set_state('post_reward')
             elif current_licks[self._wrong_idx] >= self.nlicks_to_reward: 
                 self.trial['response_time'] = self.trial_clock.getTime()
                 self.trial['response'] = -1 if self._rewarded_idx == 0 else 1
                 self.rig.set_motors(*self.motors_par['position_out'])
                 self.play_sound([self.punishment_sound])
                 self.set_state('timeout')
-                    
         if statetime >= self.response_duration: # no response
             motorpos = [*self.motors_par['position_out']]
             if not self.rig is None:
@@ -268,36 +285,42 @@ class DynamicForagingTask(TaskBase):
 
             
     def _evolve_task(self, statetime):
-        tolog = [self.state,     # state
-                 statetime,      # statetime
-                 self.itrial,    # trial number
-                 0,              # visual punishment frame
-                 0,              # audio punishment frame
-                 None,None,      # visual pos left x,y
-                 None,None,      # visual pos right x,y
-                 None,None]      # has audio event left,right 
+        tolog = [self.state,          # state
+                 statetime,           # statetime
+                 self.itrial,         # trial number
+                 self.block_count,    # iblock
+                 None,                # trial_cue
+                 None,                # reward_cue
+                 None]                # punishment_cue 
         # check for reward if the reward period is ON
+        code = 0
         if self.state in ['trial_start']:
+            code = 1
             if statetime >= self.trial_cue['duration']:
+                tolog[-3] = 1
                 self.set_state('response')
+                self._start_lick_counter()
         elif self.state in ['response']: 
             self._handle_response(statetime)
         elif self.state in ['post_reward']:
+            if statetime <= self.reward_cue['duration']:
+                tolog[-2] = 1
+            self.trial['rewarded'] = 1
             if statetime >= self.post_reward_duration:
                 if not self.rig is None:
                     self.rig.set_motors(*self.motors_par['position_out'])
                 self.set_state('iti')
                 self.exp.parse_remotes('trial_end')  # send that trial ended
-        elif self.state in ['punishment']:
+        elif self.state in ['timeout']:
             self.trial['punished'] = 1
             if statetime <= self.punishment_cue['duration']:
-                tolog[4] = 1
+                tolog[-1] = 1
             if statetime >= self.timeout_duration:
                 self.set_state('iti')
                 self.exp.parse_remotes('trial_end')  # send that trial ended
         elif self.state in ['iti']:
             self._handle_iti(statetime)
-        return 0, tolog
+        return code, tolog
 
     def _handle_iti(self,statetime):
         if not self._plot_updated:
@@ -342,7 +365,7 @@ class DynamicForagingTask(TaskBase):
             self.exp.parse_remotes('trial_start')
             self.set_state('trial_start')
             # play trial cue?
-            self.play_sound([self.trial_cue_sound])
+            self.play_sound([self.trial_sound])
             return 0, [self.state,     # state
                        statetime,      # statetime
                        self.itrial,    # trial number
@@ -362,11 +385,6 @@ class DynamicForagingTask(TaskBase):
         if not self.rig is None:
             if not no_motor_motion:
                 motorpos = [*self.motors_par['position_in']]
-                if self.assisted_trial and self.assisted_no_choice:
-                    if self.motors_par['position_out'][self._wrong_idx] < 0:
-                        motorpos[self._wrong_idx] -= self.assisted_spout_offset
-                    else:
-                        motorpos[self._wrong_idx] += self.assisted_spout_offset
                 self.rig.set_motors(*motorpos)                
             self.lick_counter = np.array([self.rig.lick0['counter'].value,
                                           self.rig.lick1['counter'].value])

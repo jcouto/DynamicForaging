@@ -136,10 +136,7 @@ class DynamicForagingWidget(QWidget):
                                vmin = 0,
                                vmax = 1)
         self.pleft.spin.setSingleStep(0.1)
-        def _pleft():
-            self.task.prob_left = pleft.val()
-            self.task.redraw_trials = True
-        self.pleft.link(_pleft)
+        self.pleft.link(self._pleft)
         l.addRow(p, self.pleft)
         
         self.settings = dict(block_exit_ntrials = "block_par['ntrials_exit_criteria']",
@@ -188,10 +185,13 @@ class DynamicForagingWidget(QWidget):
                 
         l.addRow(settingwid)
         l.addRow(QLabel('Setting values:'),settingedit)
+    def _pleft(self):
+        self.task.prob_left = self.pleft.val()
+        self.task.redraw_trials = True
 
     def set_state(self,state):
-        self.wstate.setText('state: <b> {0} </b> - trial time: {1:.3f}s'.format(
-            state, self.task.trial_clock.getTime()))
+        self.wstate.setText('state: <b> {0} </b> - trial time: {1:.3f}s - <b>{2}</b>'.format(
+            state, self.task.trial_clock.getTime(),self.task.current_block_side))
         
     def trial_init_update(self):
         m = np.max([0,self.task.itrial-self.ntrialstoplot])
