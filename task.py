@@ -19,7 +19,8 @@ class DynamicForagingTask(TaskBase):
                  block_par = dict(ntrials_exit_criteria = [15,25],
                                   performance_exit = 0.75,
                                   probabilities = [1]),
-                 trial_cue = dict(frequency=2000,
+                 trial_cue = dict(frequency_left=2000,
+                                  frequency_right=2000,
                                   duration=0.25),
                  reward_cue = dict(frequency=9000,
                                    duration=0.25),
@@ -118,6 +119,8 @@ class DynamicForagingTask(TaskBase):
                                                 stereo = -1)
         t = np.linspace(0,self.trial_cue['duration'],
                         int(self.audio_rate*self.trial_cue['duration']))
+        if not 'frequency' in self.trial_cue:
+            self.trial_cue['frequency'] = self.trial_cue['frequency_left']
         t = np.sin(self.trial_cue['frequency']*np.pi*t)
         t = np.stack([t,t]).T
         self.trial_sound = self.exp.sound.Sound(t,
@@ -200,9 +203,11 @@ class DynamicForagingTask(TaskBase):
         if (rewarded_side == 'left'):
             self._rewarded_idx = 0
             self._wrong_idx = 1
+            self.trial_cue['frequency'] = self.trial_cue['frequency_left']
         elif (rewarded_side == 'right'):
             self._rewarded_idx = 1
             self._wrong_idx = 0
+            self.trial_cue['frequency'] = self.trial_cue['frequency_right']
 
         try: # in case it changed
             self.response_duration = self.response_period[1]-self.response_period[0]
