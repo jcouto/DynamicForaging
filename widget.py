@@ -75,6 +75,25 @@ class DynamicForagingWidget(QWidget):
         m_out.clicked.connect(_out)
         l.addWidget(m_in,2,0,1,1)
         l.addWidget(m_out,2,1,1,1)
+        ##########LABCAMS REFERENCE##############
+        take_reference = QPushButton('save reference')
+        def take_ref():
+            self.task.save_load_labcams_references(overwrite = True)
+        take_reference.clicked.connect(take_ref)
+        l.addWidget(take_reference,3,0,1,1)
+        ref = QCheckBox()
+        ref.setChecked(self.task.load_labcams_references)
+        def _ref(value):
+            if ref.isChecked():
+                self.task.save_load_labcams_references()
+            else:
+                # remove it
+                if 'labcams' in [r.name for r in self.task.exp.remotes]:
+                    r = self.task.exp.remotes[[
+                        r.name for r in self.task.exp.remotes].index('labcams')]
+                    r._write('hide_reference=1')
+        ref.stateChanged.connect(_ref)
+        l.addWidget(ref,3,1,1,1)
 
         ####################REWARD######################
         r = QGroupBox('Spouts - Reward')

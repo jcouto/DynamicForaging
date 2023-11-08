@@ -29,6 +29,7 @@ class DynamicForagingTask(TaskBase):
                  nlicks_to_reward = 2,
                  seed = None,
                  widget = None,
+                 load_labcams_references = True,
                  **kwargs):
         super(DynamicForagingTask,self).__init__(
             experiment = experiment,
@@ -85,6 +86,8 @@ class DynamicForagingTask(TaskBase):
         self.last_trial_side = 0        
         self.task_trial_data = pd.DataFrame([])
         self.task_trial_settings = pd.DataFrame([])
+
+        self.load_labcams_references = load_labcams_references
         if not self.exp.gui is None and widget is None:
             from .widget import DynamicForagingWidget,QDockWidget,Qt
             self.widget = DynamicForagingWidget(self)
@@ -97,8 +100,38 @@ class DynamicForagingTask(TaskBase):
             self.exp.gui.addDockWidget(Qt.BottomDockWidgetArea,z)
             z.show()
         # check if we are using labcams and if so show/take a snapshot to be able to place the subject in the same place in relation to the rig
+        self.save_load_labcams_references()
         self._generate_task_sounds()
         self._post_init_task()
+
+    def save_load_labcams_references(self, overwrite = False):
+        if 'labcams' in [r.name for r in self.exp.remotes] and self.load_labcams_references:
+            prefpath = self.preference_path
+            r = self.exp.remotes[[
+            r.name for r in self.exp.remotes].index('labcams')]
+            if not prefpath is None:
+                prefpath = os.path.dirname(prefpath)
+                prefpath = pjoin(prefpath,'snapshots')
+                if not os.path.exists(prefpath):
+                    os.makedirs(prefpath)
+                    print('Created {0}'.format(prefpath))
+                files = glob(pjoin(prefpath,'*.tif'))
+                if not len(files) or overwrite:
+                    if overwrite:
+                        for f in files:
+                            try:
+                                os.remove(f)
+                            except:
+                                display('Could not remove {0}'.format(f))
+                    self.rig.set_motors(*self.motors_par['position_in'])
+                    time.sleep(0.5) # let the motors move
+                    r._write('snapshot={0}'.format(prefpath))
+                    display('Writing snapshots.')
+                else:
+                    r._write('load_reference={0}'.format(prefpath))
+                    display('Loading reference.')
+                    if self.pause:
+                        self.rig.set_motors(*self.motors_par['position_in'])
 
     def _generate_task_sounds(self):
         s = self.rand.uniform(low=-1,
