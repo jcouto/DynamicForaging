@@ -209,8 +209,8 @@ class DynamicForagingWidget(QWidget):
         self.task.redraw_trials = True
 
     def set_state(self,state):
-        self.wstate.setText('state: <b> {0} </b> - trial time: {1:.3f}s - <b>{2}</b>'.format(
-            state, self.task.trial_clock.getTime(),self.task.current_block_side))
+        self.wstate.setText('state: <b> {0} </b> - block {1} - <b>{2}</b>'.format(
+            state, self.task.block_count,self.task.current_block_side))
         
     def trial_init_update(self):
         m = np.max([0,self.task.itrial-self.ntrialstoplot])
